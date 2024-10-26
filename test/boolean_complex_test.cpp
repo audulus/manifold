@@ -27,9 +27,8 @@ using namespace manifold;
  */
 
 TEST(BooleanComplex, Sphere) {
-  Manifold sphere = Manifold::Sphere(1.0, 12);
-  MeshGL sphereGL = WithPositionColors(sphere);
-  sphere = Manifold(sphereGL);
+  Manifold sphere = WithPositionColors(Manifold::Sphere(1.0, 12));
+  MeshGL sphereGL = sphere.GetMeshGL();
 
   Manifold sphere2 = sphere.Translate(vec3(0.5));
   Manifold result = sphere - sphere2;
@@ -51,8 +50,8 @@ TEST(BooleanComplex, Sphere) {
 }
 
 TEST(BooleanComplex, MeshRelation) {
-  MeshGL gyroidMeshGL = WithPositionColors(Gyroid());
-  Manifold gyroid(gyroidMeshGL);
+  Manifold gyroid = WithPositionColors(Gyroid()).AsOriginal();
+  MeshGL gyroidMeshGL = gyroid.GetMeshGL();
 
   Manifold gyroid2 = gyroid.Translate(vec3(2.0));
 
@@ -142,7 +141,7 @@ TEST(BooleanComplex, Cylinders) {
 
   Manifold m1;
   for (auto& array : arrays1) {
-    mat4x3 mat;
+    mat3x4 mat;
     for (const int i : {0, 1, 2, 3}) {
       for (const int j : {0, 1, 2}) {
         mat[i][j] = array[j * 4 + i];
@@ -153,7 +152,7 @@ TEST(BooleanComplex, Cylinders) {
 
   Manifold m2;
   for (auto& array : arrays2) {
-    mat4x3 mat;
+    mat3x4 mat;
     for (const int i : {0, 1, 2, 3}) {
       for (const int j : {0, 1, 2}) {
         mat[i][j] = array[j * 4 + i];
@@ -236,13 +235,12 @@ TEST(BooleanComplex, Close) {
   Manifold result = a;
   for (int i = 0; i < 10; i++) {
     // std::cout << i << std::endl;
-    result ^= a.Translate({a.Precision() / 10 * i, 0.0, 0.0});
+    result ^= a.Translate({a.GetEpsilon() / 10 * i, 0.0, 0.0});
   }
   auto prop = result.GetProperties();
   const double tol = 0.004;
-  EXPECT_NEAR(prop.volume, (4.0 / 3.0) * glm::pi<double>() * r * r * r,
-              tol * r * r * r);
-  EXPECT_NEAR(prop.surfaceArea, 4 * glm::pi<double>() * r * r, tol * r * r);
+  EXPECT_NEAR(prop.volume, (4.0 / 3.0) * kPi * r * r * r, tol * r * r * r);
+  EXPECT_NEAR(prop.surfaceArea, 4 * kPi * r * r, tol * r * r);
 
 #ifdef MANIFOLD_EXPORT
   if (options.exportModels) ExportMesh("close.glb", result.GetMeshGL(), {});
@@ -252,17 +250,13 @@ TEST(BooleanComplex, Close) {
 }
 
 TEST(BooleanComplex, BooleanVolumes) {
-  mat4 m = glm::translate(mat4(1.0), vec3(1.0));
-
   // Define solids which volumes are easy to compute w/ bit arithmetics:
   // m1, m2, m4 are unique, non intersecting "bits" (of volume 1, 2, 4)
   // m3 = m1 + m2
   // m7 = m1 + m2 + m3
   auto m1 = Manifold::Cube({1, 1, 1});
-  auto m2 = Manifold::Cube({2, 1, 1}).Transform(
-      mat4x3(glm::translate(mat4(1.0), vec3(1.0, 0, 0))));
-  auto m4 = Manifold::Cube({4, 1, 1}).Transform(
-      mat4x3(glm::translate(mat4(1.0), vec3(3.0, 0, 0))));
+  auto m2 = Manifold::Cube({2, 1, 1}).Translate({1, 0, 0});
+  auto m4 = Manifold::Cube({4, 1, 1}).Translate({3, 0, 0});
   auto m3 = Manifold::Cube({3, 1, 1});
   auto m7 = Manifold::Cube({7, 1, 1});
 
@@ -283,7 +277,7 @@ TEST(BooleanComplex, Spiral) {
   const int d = 2;
   std::function<Manifold(const int, const double, const double)> spiral =
       [&](const int rec, const double r, const double add) {
-        const double rot = 360.0 / (glm::pi<double>() * r * 2) * d;
+        const double rot = 360.0 / (kPi * r * 2) * d;
         const double rNext = r + add / 360 * rot;
         const Manifold cube =
             Manifold::Cube(vec3(1), true).Translate({0, r, 0});
@@ -301,9 +295,9 @@ TEST(BooleanComplex, Sweep) {
 
   // generate the minimum equivalent positive angle
   auto minPosAngle = [](double angle) {
-    double div = angle / glm::two_pi<double>();
+    double div = angle / kTwoPi;
     double wholeDiv = floor(div);
-    return angle - wholeDiv * glm::two_pi<double>();
+    return angle - wholeDiv * kTwoPi;
   };
 
   // calculate determinant
@@ -318,7 +312,7 @@ TEST(BooleanComplex, Sweep) {
     std::vector<vec2> arcPoints;
 
     for (int i = 0; i < numberOfArcPoints; i++) {
-      double angle = i * glm::pi<double>() / numberOfArcPoints;
+      double angle = i * kPi / numberOfArcPoints;
       double y = arcCenterPoint.y - cos(angle) * filletRadius;
       double x = arcCenterPoint.x + sin(angle) * filletRadius;
       arcPoints.push_back(vec2(x, y));
@@ -349,8 +343,7 @@ TEST(BooleanComplex, Sweep) {
       totalAngle = posEndAngle - startAngle;
     }
 
-    int nSegments =
-        ceil(totalAngle / glm::two_pi<double>() * nSegmentsPerRotation + 1);
+    int nSegments = ceil(totalAngle / kTwoPi * nSegmentsPerRotation + 1);
     if (nSegments < 2) {
       nSegments = 2;
     }
@@ -389,7 +382,7 @@ TEST(BooleanComplex, Sweep) {
         Manifold::Extrude(profile.ToPolygons(), distance)
             .Rotate(90, 0, -90)
             .Translate(vec3(distance, 0, 0))
-            .Rotate(0, 0, angle * 180 / glm::pi<double>())
+            .Rotate(0, 0, angle * 180 / kPi)
             .Translate(vec3(p1.x, p1.y, 0));
 
     std::vector<Manifold> result;
@@ -989,8 +982,6 @@ TEST(BooleanComplex, SelfIntersect) {
 }
 
 TEST(BooleanComplex, GenericTwinBooleanTest7081) {
-  std::string file = __FILE__;
-  std::string dir = file.substr(0, file.rfind('/'));
   Manifold m1 = ReadMesh("Generic_Twin_7081.1.t0_left.glb");
   Manifold m2 = ReadMesh("Generic_Twin_7081.1.t0_right.glb");
   Manifold res = m1 + m2;  // Union
@@ -999,8 +990,6 @@ TEST(BooleanComplex, GenericTwinBooleanTest7081) {
 
 TEST(BooleanComplex, GenericTwinBooleanTest7863) {
   manifold::PolygonParams().processOverlaps = true;
-  std::string file = __FILE__;
-  std::string dir = file.substr(0, file.rfind('/'));
   Manifold m1 = ReadMesh("Generic_Twin_7863.1.t0_left.glb");
   Manifold m2 = ReadMesh("Generic_Twin_7863.1.t0_right.glb");
   Manifold res = m1 + m2;  // Union
@@ -1010,8 +999,6 @@ TEST(BooleanComplex, GenericTwinBooleanTest7863) {
 
 TEST(BooleanComplex, Havocglass8Bool) {
   manifold::PolygonParams().processOverlaps = true;
-  std::string file = __FILE__;
-  std::string dir = file.substr(0, file.rfind('/'));
   Manifold m1 = ReadMesh("Havocglass8_left.glb");
   Manifold m2 = ReadMesh("Havocglass8_right.glb");
   Manifold res = m1 + m2;  // Union
@@ -1020,8 +1007,6 @@ TEST(BooleanComplex, Havocglass8Bool) {
 }
 
 TEST(BooleanComplex, CraycloudBool) {
-  std::string file = __FILE__;
-  std::string dir = file.substr(0, file.rfind('/'));
   Manifold m1 = ReadMesh("Cray_left.glb");
   Manifold m2 = ReadMesh("Cray_right.glb");
   Manifold res = m1 - m2;
@@ -1034,6 +1019,103 @@ TEST(BooleanComplex, HullMask) {
   Manifold mask = ReadMesh("hull-mask.glb");
   Manifold ret = body - mask;
   MeshGL mesh = ret.GetMeshGL();
+}
+
+// Note - For the moment, the Status() checks are included in the loops to
+// (more or less) mimic the BRL-CAD behavior of checking the mesh for
+// unexpected output after each iteration.  Doing so is not ideal - it
+// *massively* slows the overall evaluation - but it also seems to be
+// triggering behavior that avoids a triangulation failure.
+//
+// Eventually, once other issues are resolved, the in-loop checks should be
+// removed in favor of the top level checks.
+TEST(BooleanComplex, SimpleOffset) {
+  std::string file = __FILE__;
+  std::string dir = file.substr(0, file.rfind('/'));
+  MeshGL seeds = ImportMesh(dir + "/models/" + "Generic_Twin_91.1.t0.glb");
+  EXPECT_TRUE(seeds.NumTri() > 10);
+  EXPECT_TRUE(seeds.NumVert() > 10);
+  // Unique edges
+  std::vector<std::pair<int, int>> edges;
+  for (size_t i = 0; i < seeds.NumTri(); i++) {
+    const int k[3] = {1, 2, 0};
+    for (const int j : {0, 1, 2}) {
+      int v1 = seeds.triVerts[i * 3 + j];
+      int v2 = seeds.triVerts[i * 3 + k[j]];
+      if (v2 > v1) edges.push_back(std::make_pair(v1, v2));
+    }
+  }
+  manifold::Manifold c;
+  // Vertex Spheres
+  Manifold sph = Manifold::Sphere(1, 8);
+  for (size_t i = 0; i < seeds.NumVert(); i++) {
+    vec3 vpos(seeds.vertProperties[3 * i + 0], seeds.vertProperties[3 * i + 1],
+              seeds.vertProperties[3 * i + 2]);
+    Manifold vsph = sph.Translate(vpos);
+    c += vsph;
+  }
+  // Edge Cylinders
+  for (size_t i = 0; i < edges.size(); i++) {
+    vec3 ev1 = vec3(seeds.vertProperties[3 * edges[i].first + 0],
+                    seeds.vertProperties[3 * edges[i].first + 1],
+                    seeds.vertProperties[3 * edges[i].first + 2]);
+    vec3 ev2 = vec3(seeds.vertProperties[3 * edges[i].second + 0],
+                    seeds.vertProperties[3 * edges[i].second + 1],
+                    seeds.vertProperties[3 * edges[i].second + 2]);
+    vec3 edge = ev2 - ev1;
+    double len = la::length(edge);
+    if (len < std::numeric_limits<float>::min()) continue;
+    manifold::Manifold origin_cyl = manifold::Manifold::Cylinder(len, 1, 1, 8);
+    vec3 evec(-1 * edge.x, -1 * edge.y, edge.z);
+    quat q = rotation_quat(normalize(evec), vec3(0, 0, 1));
+    manifold::Manifold right = origin_cyl.Transform({la::qmat(q), ev1});
+    c += right;
+  }
+  // Triangle Volumes
+  for (size_t i = 0; i < seeds.NumTri(); i++) {
+    int eind[3];
+    for (int j = 0; j < 3; j++) eind[j] = seeds.triVerts[i * 3 + j];
+    std::vector<vec3> ev;
+    for (int j = 0; j < 3; j++) {
+      ev.push_back(vec3(seeds.vertProperties[3 * eind[j] + 0],
+                        seeds.vertProperties[3 * eind[j] + 1],
+                        seeds.vertProperties[3 * eind[j] + 2]));
+    }
+    vec3 a = ev[0] - ev[2];
+    vec3 b = ev[1] - ev[2];
+    vec3 n = la::normalize(la::cross(a, b));
+    if (!all(isfinite(n))) continue;
+    // Extrude the points above and below the plane of the triangle
+    vec3 pnts[6];
+    for (int j = 0; j < 3; j++) pnts[j] = ev[j] + n;
+    for (int j = 3; j < 6; j++) pnts[j] = ev[j - 3] - n;
+    // Construct the points and faces of the new manifold
+    double pts[3 * 6] = {pnts[4].x, pnts[4].y, pnts[4].z, pnts[3].x, pnts[3].y,
+                         pnts[3].z, pnts[0].x, pnts[0].y, pnts[0].z, pnts[1].x,
+                         pnts[1].y, pnts[1].z, pnts[5].x, pnts[5].y, pnts[5].z,
+                         pnts[2].x, pnts[2].y, pnts[2].z};
+    int faces[24] = {
+        faces[0] = 0,  faces[1] = 1,  faces[2] = 4,   // 1 2 5
+        faces[3] = 2,  faces[4] = 3,  faces[5] = 5,   // 3 4 6
+        faces[6] = 1,  faces[7] = 0,  faces[8] = 3,   // 2 1 4
+        faces[9] = 3,  faces[10] = 2, faces[11] = 1,  // 4 3 2
+        faces[12] = 3, faces[13] = 0, faces[14] = 4,  // 4 1 5
+        faces[15] = 4, faces[16] = 5, faces[17] = 3,  // 5 6 4
+        faces[18] = 5, faces[19] = 4, faces[20] = 1,  // 6 5 2
+        faces[21] = 1, faces[22] = 2, faces[23] = 5   // 2 3 6
+    };
+    manifold::MeshGL64 tri_m;
+    for (int j = 0; j < 18; j++)
+      tri_m.vertProperties.insert(tri_m.vertProperties.end(), pts[j]);
+    for (int j = 0; j < 24; j++)
+      tri_m.triVerts.insert(tri_m.triVerts.end(), faces[j]);
+    manifold::Manifold right(tri_m);
+    c += right;
+    // See above discussion
+    EXPECT_EQ(c.Status(), Manifold::Error::NoError);
+  }
+  // See above discussion
+  EXPECT_EQ(c.Status(), Manifold::Error::NoError);
 }
 
 #endif

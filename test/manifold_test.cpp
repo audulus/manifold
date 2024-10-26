@@ -145,13 +145,13 @@ TEST(Manifold, DecomposeProps) {
   std::vector<Manifold> manifoldList;
   auto tet = WithPositionColors(Manifold::Tetrahedron());
   manifoldList.emplace_back(tet);
-  input.emplace_back(tet);
+  input.emplace_back(tet.GetMeshGL());
   auto cube = WithPositionColors(Manifold::Cube());
   manifoldList.emplace_back(cube);
-  input.emplace_back(cube);
+  input.emplace_back(cube.GetMeshGL());
   auto sphere = WithPositionColors(Manifold::Sphere(1, 4));
   manifoldList.emplace_back(sphere);
-  input.emplace_back(sphere);
+  input.emplace_back(sphere.GetMeshGL());
   Manifold manifolds = Manifold::Compose(manifoldList);
 
   ExpectMeshes(manifolds, {{8, 12, 3}, {6, 8, 3}, {4, 4, 3}});
@@ -213,8 +213,8 @@ TEST(Manifold, Revolve) {
     vug = Manifold::Revolve(rotatedPolys, 48);
     EXPECT_EQ(vug.Genus(), -1);
     auto prop = vug.GetProperties();
-    EXPECT_NEAR(prop.volume, 14.0 * glm::pi<double>(), 0.2);
-    EXPECT_NEAR(prop.surfaceArea, 30.0 * glm::pi<double>(), 0.2);
+    EXPECT_NEAR(prop.volume, 14.0 * kPi, 0.2);
+    EXPECT_NEAR(prop.surfaceArea, 30.0 * kPi, 0.2);
   }
 }
 
@@ -223,8 +223,8 @@ TEST(Manifold, Revolve2) {
   Manifold donutHole = Manifold::Revolve(polys, 48);
   EXPECT_EQ(donutHole.Genus(), 0);
   auto prop = donutHole.GetProperties();
-  EXPECT_NEAR(prop.volume, 48.0 * glm::pi<double>(), 1.0);
-  EXPECT_NEAR(prop.surfaceArea, 96.0 * glm::pi<double>(), 1.0);
+  EXPECT_NEAR(prop.volume, 48.0 * kPi, 1.0);
+  EXPECT_NEAR(prop.surfaceArea, 96.0 * kPi, 1.0);
 }
 
 #ifdef MANIFOLD_CROSS_SECTION
@@ -232,8 +232,8 @@ TEST(Manifold, Revolve3) {
   CrossSection circle = CrossSection::Circle(1, 32);
   Manifold sphere = Manifold::Revolve(circle.ToPolygons(), 32);
   auto prop = sphere.GetProperties();
-  EXPECT_NEAR(prop.volume, 4.0 / 3.0 * glm::pi<double>(), 0.1);
-  EXPECT_NEAR(prop.surfaceArea, 4 * glm::pi<double>(), 0.15);
+  EXPECT_NEAR(prop.volume, 4.0 / 3.0 * kPi, 0.1);
+  EXPECT_NEAR(prop.surfaceArea, 4 * kPi, 0.15);
 }
 #endif
 
@@ -247,10 +247,9 @@ TEST(Manifold, PartialRevolveOnYAxis) {
     revolute = Manifold::Revolve(rotatedPolys, 48, 180);
     EXPECT_EQ(revolute.Genus(), 1);
     auto prop = revolute.GetProperties();
-    EXPECT_NEAR(prop.volume, 24.0 * glm::pi<double>(), 1.0);
+    EXPECT_NEAR(prop.volume, 24.0 * kPi, 1.0);
     EXPECT_NEAR(prop.surfaceArea,
-                48.0 * glm::pi<double>() + 4.0 * 4.0 * 2.0 - 2.0 * 2.0 * 2.0,
-                1.0);
+                48.0 * kPi + 4.0 * 4.0 * 2.0 - 2.0 * 2.0 * 2.0, 1.0);
   }
 }
 
@@ -291,7 +290,7 @@ TEST(Manifold, Warp2) {
   Manifold shape =
       Manifold::Extrude(circle.ToPolygons(), 2, 10).Warp([](vec3& v) {
         int nSegments = 10;
-        double angleStep = 2.0 / 3.0 * glm::pi<double>() / nSegments;
+        double angleStep = 2.0 / 3.0 * kPi / nSegments;
         int zIndex = nSegments - 1 - std::round(v.z);
         double angle = zIndex * angleStep;
         v.z = v.y;
@@ -311,17 +310,28 @@ TEST(Manifold, Warp2) {
 #endif
 
 TEST(Manifold, WarpBatch) {
-  Manifold shape1 =
-      Manifold::Cube({2, 3, 4}).Warp([](vec3& v) { v.x += v.z * v.z; });
+  Manifold cube = Manifold::Cube({2, 3, 4});
+  const int id = cube.OriginalID();
+
+  Manifold shape1 = cube.Warp([](vec3& v) { v.x += v.z * v.z; });
   auto prop1 = shape1.GetProperties();
 
-  Manifold shape2 = Manifold::Cube({2, 3, 4}).WarpBatch([](VecView<vec3> vecs) {
+  Manifold shape2 = cube.WarpBatch([](VecView<vec3> vecs) {
     for (vec3& v : vecs) {
       v.x += v.z * v.z;
     }
   });
   auto prop2 = shape2.GetProperties();
 
+  EXPECT_GE(id, 0);
+  EXPECT_EQ(shape1.OriginalID(), -1);
+  EXPECT_EQ(shape2.OriginalID(), -1);
+  std::vector<uint32_t> runOriginalID1 = shape1.GetMeshGL().runOriginalID;
+  EXPECT_EQ(runOriginalID1.size(), 1);
+  EXPECT_EQ(runOriginalID1[0], id);
+  std::vector<uint32_t> runOriginalID2 = shape2.GetMeshGL().runOriginalID;
+  EXPECT_EQ(runOriginalID2.size(), 1);
+  EXPECT_EQ(runOriginalID2[0], id);
   EXPECT_EQ(prop1.volume, prop2.volume);
   EXPECT_EQ(prop1.surfaceArea, prop2.surfaceArea);
 }
@@ -422,20 +432,20 @@ TEST(Manifold, Transform) {
   Manifold cube2 = cube;
   cube = cube.Rotate(30, 40, 50).Scale({6, 5, 4}).Translate({1, 2, 3});
 
-  mat3 rX(1.0, 0.0, 0.0,            //
-          0.0, cosd(30), sind(30),  //
-          0.0, -sind(30), cosd(30));
-  mat3 rY(cosd(40), 0.0, -sind(40),  //
-          0.0, 1.0, 0.0,             //
-          sind(40), 0.0, cosd(40));
-  mat3 rZ(cosd(50), sind(50), 0.0,   //
-          -sind(50), cosd(50), 0.0,  //
-          0.0, 0.0, 1.0);
-  mat3 s = mat3(1.0);
+  mat3 rX({1.0, 0.0, 0.0},            //
+          {0.0, cosd(30), sind(30)},  //
+          {0.0, -sind(30), cosd(30)});
+  mat3 rY({cosd(40), 0.0, -sind(40)},  //
+          {0.0, 1.0, 0.0},             //
+          {sind(40), 0.0, cosd(40)});
+  mat3 rZ({cosd(50), sind(50), 0.0},   //
+          {-sind(50), cosd(50), 0.0},  //
+          {0.0, 0.0, 1.0});
+  mat3 s;
   s[0][0] = 6;
   s[1][1] = 5;
   s[2][2] = 4;
-  mat4x3 transform = mat4x3(s * rZ * rY * rX);
+  mat3x4 transform = mat3x4(s * rZ * rY * rX, vec3(0.0));
   transform[3] = vec3(1, 2, 3);
   cube2 = cube2.Transform(transform);
 
@@ -453,7 +463,7 @@ TEST(Manifold, Slice) {
 #endif
 
 TEST(Manifold, MeshRelation) {
-  MeshGL gyroidMeshGL = WithIndexColors(Gyroid().GetMeshGL());
+  MeshGL gyroidMeshGL = WithPositionColors(Gyroid()).AsOriginal().GetMeshGL();
   Manifold gyroid(gyroidMeshGL);
 
 #ifdef MANIFOLD_EXPORT
@@ -475,8 +485,8 @@ TEST(Manifold, MeshRelationTransform) {
 }
 
 TEST(Manifold, MeshRelationRefine) {
-  MeshGL inGL = WithIndexColors(Csaszar());
-  Manifold csaszar(inGL);
+  Manifold csaszar = WithPositionColors(Csaszar()).AsOriginal();
+  MeshGL inGL = csaszar.GetMeshGL();
 
   RelatedGL(csaszar, {inGL});
   csaszar = csaszar.RefineToLength(1);
@@ -492,11 +502,15 @@ TEST(Manifold, MeshRelationRefine) {
 }
 
 TEST(Manifold, MeshRelationRefinePrecision) {
-  MeshGL inGL = WithPositionColors(Csaszar());
+  MeshGL inGL = WithPositionColors(Csaszar()).GetMeshGL();
+  const int id = inGL.runOriginalID[0];
   Manifold csaszar = Manifold::Smooth(inGL);
 
-  csaszar = csaszar.RefineToPrecision(0.05);
+  csaszar = csaszar.RefineToTolerance(0.05);
   ExpectMeshes(csaszar, {{2684, 5368, 3}});
+  std::vector<uint32_t> runOriginalID = csaszar.GetMeshGL().runOriginalID;
+  EXPECT_EQ(runOriginalID.size(), 1);
+  EXPECT_EQ(runOriginalID[0], id);
 
 #ifdef MANIFOLD_EXPORT
   ExportOptions opt;
@@ -557,7 +571,6 @@ TEST(Manifold, Merge) {
 }
 
 TEST(Manifold, PinchedVert) {
-  // TODO
   MeshGL shape;
   shape.numProp = 3;
   shape.vertProperties = {0,        0,  0,   //
@@ -592,12 +605,12 @@ TEST(Manifold, FaceIDRoundTrip) {
   const Manifold cube = Manifold::Cube();
   ASSERT_GE(cube.OriginalID(), 0);
   MeshGL inGL = cube.GetMeshGL();
-  ASSERT_EQ(NumUnique(inGL.faceID), 6);
-  inGL.faceID = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+  ASSERT_EQ(NumUnique(inGL.faceID), 12);
+  inGL.faceID = {3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5};
 
   const Manifold cube2(inGL);
   const MeshGL outGL = cube2.GetMeshGL();
-  ASSERT_EQ(NumUnique(outGL.faceID), 12);
+  ASSERT_EQ(NumUnique(outGL.faceID), 2);
 }
 
 TEST(Manifold, MirrorUnion) {
@@ -612,7 +625,7 @@ TEST(Manifold, MirrorUnion) {
 
   auto vol_a = a.GetProperties().volume;
   EXPECT_FLOAT_EQ(vol_a * 2.75, result.GetProperties().volume);
-  EXPECT_TRUE(a.Mirror(vec3(0)).IsEmpty());
+  EXPECT_TRUE(a.Mirror(vec3(0.0)).IsEmpty());
 }
 
 TEST(Manifold, MirrorUnion2) {

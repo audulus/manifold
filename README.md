@@ -33,7 +33,6 @@ If you prefer Python to JS/TS, make your own copy of the example notebook above.
 This is a modern C++ library that Github's CI verifies builds and runs on a variety of platforms. Additionally, we build bindings for JavaScript ([manifold-3d](https://www.npmjs.com/package/manifold-3d) on npm), Python ([manifold3d](https://pypi.org/project/manifold3d/)), and C to make this library more portable and easy to use.
 
 System Dependencies (note that we will automatically download the dependency if there is no such package on the system):
-- [`GLM`](https://github.com/g-truc/glm/): A compact header-only vector library.
 - [`tbb`](https://github.com/oneapi-src/oneTBB/): Intel's thread building blocks library. (only when `MANIFOLD_PAR=ON` is enabled)
 - [`gtest`](https://github.com/google/googletest/): Google test library (only when test is enabled, i.e. `MANIFOLD_TEST=ON`)
 
@@ -67,20 +66,21 @@ test/manifold_test
 ```
 
 CMake flags (usage e.g. `-DMANIFOLD_DEBUG=ON`):
-- `MANIFOLD_JSBIND=[OFF, <ON>]`: Build js binding when using emscripten.
+- `MANIFOLD_JSBIND=[OFF, <ON>]`: Build js binding (when using the emscripten toolchain).
 - `MANIFOLD_CBIND=[<OFF>, ON]`: Build C FFI binding.
 - `MANIFOLD_PYBIND=[OFF, <ON>]`: Build python binding.
-- `MANIFOLD_PAR=[<OFF>, ON]`: Provides multi-thread parallelization, requires `libtbb-dev` enabled.
-- `MANIFOLD_CROSS_SECTION=[OFF, <ON>]`: Build CrossSection for 2D support (needed by language bindings).
+- `MANIFOLD_PAR=[<OFF>, ON]`: Provides multi-thread parallelization, requires `libtbb-dev` if enabled.
+- `MANIFOLD_CROSS_SECTION=[OFF, <ON>]`: Build CrossSection for 2D support (needed by language bindings), requires `Clipper2` if enabled.
 - `MANIFOLD_EXPORT=[<OFF>, ON]`: Enables GLB export of 3D models from the tests, requires `libassimp-dev`.
-- `MANIFOLD_DEBUG=[<OFF>, ON]`: Enables internal assertions and exceptions.
+- `MANIFOLD_DEBUG=[<OFF>, ON]`: Enables internal assertions and exceptions. This incurs around 20% runtime overhead.
 - `MANIFOLD_TEST=[OFF, <ON>]`: Build unittests.
 - `TRACY_ENABLE=[<OFF>, ON]`: Enable integration with tracy profiler. 
   See profiling section below.
-- `BUILD_TEST_CGAL=[<OFF>, ON]`: Builds a CGAL-based performance [comparison](https://github.com/elalish/manifold/tree/master/extras), requires `libcgal-dev`.
 
-Offline building:
-- `FETCHCONTENT_SOURCE_DIR_GLM`: path to glm source.
+Offline building (with missing dependencies):
+- `MANIFOLD_DOWNLOADS=[OFF, <ON>]`: Automatically download missing dependencies.
+  Need to set `FETCHCONTENT_SOURCE_DIR_*` if the dependency `*` is missing.
+- `FETCHCONTENT_SOURCE_DIR_TBB`: path to tbb source (if `MANIFOLD_PAR` is enabled).
 - `FETCHCONTENT_SOURCE_DIR_GOOGLETEST`: path to googletest source.
 
 The build instructions used by our CI are in [manifold.yml](https://github.com/elalish/manifold/blob/master/.github/workflows/manifold.yml), which is a good source to check if something goes wrong and for instructions specific to other platforms, like Windows.

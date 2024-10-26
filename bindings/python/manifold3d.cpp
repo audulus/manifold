@@ -32,36 +32,36 @@ namespace nb = nanobind;
 using namespace manifold;
 
 template <class T>
-struct glm_name {};
+struct la_name {};
 template <>
-struct glm_name<vec3> {
+struct la_name<vec3> {
   static constexpr char const name[] = "Doublex3";
   static constexpr char const multi_name[] = "DoubleNx3";
 };
 template <>
-struct glm_name<vec2> {
+struct la_name<vec2> {
   static constexpr char const name[] = "Doublex2";
   static constexpr char const multi_name[] = "DoubleNx2";
 };
 template <>
-struct glm_name<ivec3> {
+struct la_name<ivec3> {
   static constexpr char const name[] = "Intx3";
   static constexpr char const multi_name[] = "IntNx3";
 };
 template <>
-struct glm_name<mat4x3> {
+struct la_name<mat3x4> {
   static constexpr char const name[] = "Double3x4";
 };
 template <>
-struct glm_name<mat3x2> {
+struct la_name<mat2x3> {
   static constexpr char const name[] = "Double2x3";
 };
 
-// handle glm::vecN
-template <class T, int N, glm::qualifier Q>
-struct nb::detail::type_caster<glm::vec<N, T, Q>> {
-  using glm_type = glm::vec<N, T, Q>;
-  NB_TYPE_CASTER(glm_type, const_name(glm_name<glm_type>::name));
+// handle la::vecN
+template <class T, int N>
+struct nb::detail::type_caster<la::vec<T, N>> {
+  using la_type = la::vec<T, N>;
+  NB_TYPE_CASTER(la_type, const_name(la_name<la_type>::name));
 
   bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
     int size = PyObject_Size(src.ptr());  // negative on failure
@@ -73,7 +73,7 @@ struct nb::detail::type_caster<glm::vec<N, T, Q>> {
     }
     return true;
   }
-  static handle from_cpp(glm_type vec, rv_policy policy,
+  static handle from_cpp(la_type vec, rv_policy policy,
                          cleanup_list *cleanup) noexcept {
     nb::list out;
     for (int i = 0; i < N; i++) out.append(vec[i]);
@@ -81,12 +81,12 @@ struct nb::detail::type_caster<glm::vec<N, T, Q>> {
   }
 };
 
-// handle glm::matMxN
-template <class T, int C, int R, glm::qualifier Q>
-struct nb::detail::type_caster<glm::mat<C, R, T, Q>> {
-  using glm_type = glm::mat<C, R, T, Q>;
+// handle la::matMxN
+template <class T, int C, int R>
+struct nb::detail::type_caster<la::mat<T, R, C>> {
+  using la_type = la::mat<T, R, C>;
   using numpy_type = nb::ndarray<nb::numpy, T, nb::shape<R, C>>;
-  NB_TYPE_CASTER(glm_type, const_name(glm_name<glm_type>::name));
+  NB_TYPE_CASTER(la_type, const_name(la_name<la_type>::name));
 
   bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
     int rows = PyObject_Size(src.ptr());  // negative on failure
@@ -103,29 +103,28 @@ struct nb::detail::type_caster<glm::mat<C, R, T, Q>> {
     }
     return true;
   }
-  static handle from_cpp(glm_type mat, rv_policy policy,
+  static handle from_cpp(la_type mat, rv_policy policy,
                          cleanup_list *cleanup) noexcept {
-    T *buffer = new T[R * C];
-    nb::capsule mem_mgr(buffer, [](void *p) noexcept { delete[] (T *)p; });
+    std::array<T, R * C> buffer;
     for (int i = 0; i < R; i++) {
       for (int j = 0; j < C; j++) {
-        // py is (Rows, Cols), glm is (Cols, Rows)
+        // py is (Rows, Cols), la is (Cols, Rows)
         buffer[i * C + j] = mat[j][i];
       }
     }
-    numpy_type arr{buffer, {R, C}, std::move(mem_mgr)};
-    return ndarray_wrap(arr.handle(), int(ndarray_framework::numpy), policy,
-                        cleanup);
+    numpy_type arr{buffer, {R, C}, nb::handle()};
+    // we must copy the underlying data
+    return make_caster<numpy_type>::from_cpp(arr, rv_policy::copy, cleanup);
   }
 };
 
-// handle std::vector<glm::vecN>
-template <class T, int N, glm::qualifier Q>
-struct nb::detail::type_caster<std::vector<glm::vec<N, T, Q>>> {
-  using glm_type = glm::vec<N, T, Q>;
+// handle std::vector<la::vecN>
+template <class T, int N>
+struct nb::detail::type_caster<std::vector<la::vec<T, N>>> {
+  using la_type = la::vec<T, N>;
   using numpy_type = nb::ndarray<nb::numpy, T, nb::shape<-1, N>>;
-  NB_TYPE_CASTER(std::vector<glm_type>,
-                 const_name(glm_name<glm_type>::multi_name));
+  NB_TYPE_CASTER(std::vector<la_type>,
+                 const_name(la_name<la_type>::multi_name));
 
   bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
     make_caster<numpy_type> arr_cast;
@@ -142,7 +141,7 @@ struct nb::detail::type_caster<std::vector<glm::vec<N, T, Q>>> {
       if (num_vec == static_cast<size_t>(-1)) return false;
       value.resize(num_vec);
       for (size_t i = 0; i < num_vec; i++) {
-        make_caster<glm_type> vec_cast;
+        make_caster<la_type> vec_cast;
         if (!vec_cast.from_python(src[i], flags, cleanup)) return false;
         value[i] = vec_cast.value;
       }
@@ -160,41 +159,30 @@ struct nb::detail::type_caster<std::vector<glm::vec<N, T, Q>>> {
       }
     }
     numpy_type arr{buffer, {num_vec, N}, std::move(mem_mgr)};
-    return ndarray_wrap(arr.handle(), ndarray_framework::numpy, policy,
-                        cleanup);
+    // we can just do a move because we already did the copying
+    return make_caster<numpy_type>::from_cpp(arr, rv_policy::move, cleanup);
   }
 };
 
-// handle VecView<glm::vec*>
-template <class T, int N, glm::qualifier Q>
-struct nb::detail::type_caster<manifold::VecView<glm::vec<N, T, Q>>> {
-  using glm_type = glm::vec<N, T, Q>;
+// handle VecView<la::vecN>
+template <class T, int N>
+struct nb::detail::type_caster<manifold::VecView<la::vec<T, N>>> {
+  using la_type = la::vec<T, N>;
   using numpy_type = nb::ndarray<nb::numpy, T, nb::shape<-1, N>>;
-  NB_TYPE_CASTER(manifold::VecView<glm_type>,
-                 const_name(glm_name<glm_type>::multi_name));
+  NB_TYPE_CASTER(manifold::VecView<la_type>,
+                 const_name(la_name<la_type>::multi_name));
 
-  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
-    make_caster<numpy_type> arr_cast;
-    if (!arr_cast.from_python(src, flags, cleanup)) return false;
-    // TODO try 2d iterators if numpy cast fails
-    size_t num_vec = arr_cast.value.shape(0);
-    if (num_vec != value.size()) return false;
-    for (size_t i = 0; i < num_vec; i++) {
-      for (int j = 0; j < N; j++) {
-        value[i][j] = arr_cast.value(i, j);
-      }
-    }
-    return true;
-  }
   static handle from_cpp(Value vec, rv_policy policy,
                          cleanup_list *cleanup) noexcept {
-    // do we have ownership issue here?
     size_t num_vec = vec.size();
-    static_assert(sizeof(vec[0]) == (N * sizeof(T)),
+    // assume packed struct
+    static_assert(alignof(la::vec<T, N>) <= (N * sizeof(T)),
                   "VecView -> numpy requires packed structs");
-    numpy_type arr{&vec[0], {num_vec, N}, nb::handle()};
-    return ndarray_wrap(arr.handle(), ndarray_framework::numpy, policy,
-                        cleanup);
+    static_assert(sizeof(la::vec<T, N>) == (N * sizeof(T)),
+                  "VecView -> numpy requires packed structs");
+    numpy_type arr{vec.data(), {num_vec, N}, nb::handle()};
+    // we must copy the underlying data
+    return make_caster<numpy_type>::from_cpp(arr, rv_policy::copy, cleanup);
   }
 };
 
@@ -228,8 +216,7 @@ NB_MODULE(manifold3d, m) {
         nb::arg("radius"), get_circular_segments__radius);
 
   m.def("triangulate", &Triangulate, nb::arg("polygons"),
-        nb::arg("precision") = -1,  // TODO document
-        triangulate__polygons__precision);
+        nb::arg("epsilon") = -1, triangulate__polygons__epsilon);
 
   nb::class_<Manifold>(m, "Manifold")
       .def(nb::init<>(), manifold__manifold)
@@ -275,8 +262,22 @@ NB_MODULE(manifold3d, m) {
             return self.Warp([&warp_func](vec3 &v) { v = warp_func(v); });
           },
           nb::arg("warp_func"), manifold__warp__warp_func)
-      .def("warp_batch", &Manifold::WarpBatch, nb::arg("warp_func"),
-           manifold__warp_batch__warp_func)
+      .def(
+          "warp_batch",
+          [](const Manifold &self,
+             std::function<nb::object(VecView<vec3>)> warp_func) {
+            // need a wrapper because python cant modify a reference in-place
+            return self.WarpBatch([&warp_func](VecView<vec3> v) {
+              auto tmp = warp_func(v);
+              nb::ndarray<double, nb::shape<-1, 3>, nanobind::c_contig> tmpnd;
+              if (!nb::try_cast(tmp, tmpnd) || tmpnd.ndim() != 2)
+                throw std::runtime_error(
+                    "Invalid vector shape, expected (:, 3)");
+              std::copy(tmpnd.data(), tmpnd.data() + v.size() * 3,
+                        &v.data()->x);
+            });
+          },
+          nb::arg("warp_func"), manifold__warp_batch__warp_func)
       .def(
           "set_properties",
           [](const Manifold &self, int newNumProp,
@@ -327,8 +328,8 @@ NB_MODULE(manifold3d, m) {
       .def("refine", &Manifold::Refine, nb::arg("n"), manifold__refine__n)
       .def("refine_to_length", &Manifold::RefineToLength, nb::arg("length"),
            manifold__refine_to_length__length)
-      .def("refine_to_precision", &Manifold::RefineToPrecision,
-           nb::arg("precision"), manifold__refine_to_precision__precision)
+      .def("refine_to_tolerance", &Manifold::RefineToTolerance,
+           nb::arg("tolerance"), manifold__refine_to_tolerance__tolerance)
       .def("to_mesh", &Manifold::GetMeshGL,
            nb::arg("normal_idx") = std::make_tuple(0, 0, 0),
            manifold__get_mesh_gl__normal_idx)
@@ -337,22 +338,22 @@ NB_MODULE(manifold3d, m) {
       .def("num_tri", &Manifold::NumTri, manifold__num_tri)
       .def("num_prop", &Manifold::NumProp, manifold__num_prop)
       .def("num_prop_vert", &Manifold::NumPropVert, manifold__num_prop_vert)
-      .def("precision", &Manifold::Precision, manifold__precision)
       .def("genus", &Manifold::Genus, manifold__genus)
       .def(
           "volume",
           [](const Manifold &self) { return self.GetProperties().volume; },
           "Get the volume of the manifold\n This is clamped to zero for a "
-          "given face if they are within the Precision().")
+          "given face if they are within the Epsilon().")
       .def(
           "surface_area",
           [](const Manifold &self) { return self.GetProperties().surfaceArea; },
           "Get the surface area of the manifold\n This is clamped to zero for "
-          "a given face if they are within the Precision().")
+          "a given face if they are within the Epsilon().")
       .def("original_id", &Manifold::OriginalID, manifold__original_id)
-      .def("as_original", &Manifold::AsOriginal,
-           nb::arg("property_tolerance") = nb::list(),
-           manifold__as_original__property_tolerance)
+      .def("get_tolerance", &Manifold::GetTolerance, manifold__get_tolerance)
+      .def("set_tolerance", &Manifold::SetTolerance,
+           manifold__set_tolerance__tolerance)
+      .def("as_original", &Manifold::AsOriginal, manifold__as_original)
       .def("is_empty", &Manifold::IsEmpty, manifold__is_empty)
       .def("decompose", &Manifold::Decompose, manifold__decompose)
       .def("split", &Manifold::Split, nb::arg("cutter"),
@@ -372,7 +373,7 @@ NB_MODULE(manifold3d, m) {
       .def(
           "project",
           [](const Manifold &self) {
-            return CrossSection(self.Project()).Simplify(self.Precision());
+            return CrossSection(self.Project()).Simplify(self.GetEpsilon());
           },
           manifold__project)
       .def("status", &Manifold::Status, manifold__status)
@@ -401,7 +402,6 @@ NB_MODULE(manifold3d, m) {
           },
           nb::arg("mesh"), nb::arg("sharpened_edges") = nb::list(),
           nb::arg("edge_smoothness") = nb::list(),
-          // todo params slightly diff
           manifold__smooth__mesh_gl__sharpened_edges)
       .def_static("batch_boolean", &Manifold::BatchBoolean,
                   nb::arg("manifolds"), nb::arg("op"),
@@ -437,7 +437,7 @@ NB_MODULE(manifold3d, m) {
           "level_set",
           [](const std::function<double(double, double, double)> &f,
              std::vector<double> bounds, double edgeLength, double level = 0.0,
-             double precision = -1) {
+             double tolerance = -1) {
             // Same format as Manifold.bounding_box
             Box bound = {vec3(bounds[0], bounds[1], bounds[2]),
                          vec3(bounds[3], bounds[4], bounds[5])};
@@ -446,11 +446,11 @@ NB_MODULE(manifold3d, m) {
               return f(v.x, v.y, v.z);
             };
             return Manifold::LevelSet(cppToPython, bound, edgeLength, level,
-                                      precision, false);
+                                      tolerance, false);
           },
           nb::arg("f"), nb::arg("bounds"), nb::arg("edgeLength"),
-          nb::arg("level") = 0.0, nb::arg("precision") = -1,
-          manifold__level_set__sdf__bounds__edge_length__level__precision__can_parallel)
+          nb::arg("level") = 0.0, nb::arg("tolerance") = -1,
+          manifold__level_set__sdf__bounds__edge_length__level__tolerance__can_parallel)
       .def_static(
           "cylinder", &Manifold::Cylinder, nb::arg("height"),
           nb::arg("radius_low"), nb::arg("radius_high") = -1.0f,
@@ -484,7 +484,7 @@ NB_MODULE(manifold3d, m) {
                  nb::ndarray<uint32_t, nb::shape<-1>, nb::c_contig>> &faceID,
              const std::optional<nb::ndarray<float, nb::shape<-1, 3, 4>,
                                              nb::c_contig>> &halfedgeTangent,
-             float precision) {
+             float tolerance) {
             new (self) MeshGL();
             MeshGL &out = *self;
             out.numProp = vertProp.shape(1);
@@ -529,7 +529,7 @@ NB_MODULE(manifold3d, m) {
           nb::arg("run_original_id") = nb::none(),
           nb::arg("run_transform") = nb::none(),
           nb::arg("face_id") = nb::none(),
-          nb::arg("halfedge_tangent") = nb::none(), nb::arg("precision") = 0)
+          nb::arg("halfedge_tangent") = nb::none(), nb::arg("tolerance") = 0)
       .def_prop_ro(
           "vert_properties",
           [](const MeshGL &self) {
@@ -670,6 +670,23 @@ NB_MODULE(manifold3d, m) {
           nb::arg("warp_func"), cross_section__warp__warp_func)
       .def("warp_batch", &CrossSection::WarpBatch, nb::arg("warp_func"),
            cross_section__warp_batch__warp_func)
+
+      .def(
+          "warp_batch",
+          [](const CrossSection &self,
+             std::function<nb::object(VecView<vec2>)> warp_func) {
+            // need a wrapper because python cant modify a reference in-place
+            return self.WarpBatch([&warp_func](VecView<vec2> v) {
+              auto tmp = warp_func(v);
+              nb::ndarray<double, nb::shape<-1, 2>, nanobind::c_contig> tmpnd;
+              if (!nb::try_cast(tmp, tmpnd) || tmpnd.ndim() != 2)
+                throw std::runtime_error(
+                    "Invalid vector shape, expected (:, 2)");
+              std::copy(tmpnd.data(), tmpnd.data() + v.size() * 2,
+                        &v.data()->x);
+            });
+          },
+          nb::arg("warp_func"), cross_section__warp_batch__warp_func)
       .def("simplify", &CrossSection::Simplify, nb::arg("epsilon") = 1e-6,
            cross_section__simplify__epsilon)
       .def(

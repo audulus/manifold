@@ -56,6 +56,11 @@ option(
 option(MANIFOLD_EXCEPTIONS "Build manifold with exception enabled" ON)
 option(MANIFOLD_EXPORT "Build mesh export (via assimp) utility library" OFF)
 option(MANIFOLD_PAR "Enable Parallel backend" OFF)
+option(
+  MANIFOLD_OPTIMIZED
+  "Force Optimized build, even with debugging enabled"
+  OFF
+)
 option(MANIFOLD_TEST "Enable testing suite" ON)
 option(BUILD_SHARED_LIBS "Build shared library" ON)
 include(CMakeDependentOption)
@@ -84,10 +89,8 @@ set(MANIFOLD_FLAGS "" CACHE STRING "Manifold compiler flags")
 # Development options
 option(TRACY_ENABLE "Use tracy profiling" OFF)
 option(TRACY_MEMORY_USAGE "Track memory allocation with tracy (expensive)" OFF)
-option(BUILD_TEST_CGAL "Build CGAL performance comparisons" OFF)
 mark_as_advanced(TRACY_ENABLE)
 mark_as_advanced(TRACY_MEMORY_USAGE)
-mark_as_advanced(BUILD_TEST_CGAL)
 
 # fuzztest is a rather large dependency
 option(MANIFOLD_FUZZ "Enable fuzzing tests" OFF)
@@ -152,17 +155,16 @@ if(MSVC)
   list(APPEND MANIFOLD_FLAGS /DNOMINMAX /bigobj)
 else()
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    list(APPEND WARNING_FLAGS -Wall -Wno-unknown-warning-option -Wno-unused)
+  else()
     list(
       APPEND
       WARNING_FLAGS
       -Wall
+      -Wno-unknown-warning-option
       -Wno-unused
-      -Wno-array-bounds
-      -Wno-stringop-overflow
-      -Wno-alloc-size-larger-than
+      -Wno-shorten-64-to-32
     )
-  else()
-    list(APPEND WARNING_FLAGS -Wall -Wno-unused -Wno-shorten-64-to-32)
   endif()
   if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -172,6 +174,13 @@ else()
     list(APPEND WARNING_FLAGS -Werror)
   endif()
   list(APPEND MANIFOLD_FLAGS ${WARNING_FLAGS})
+  if(
+    MANIFOLD_OPTIMIZED
+    OR "${CMAKE_BUILD_TYPE}" STREQUAL "Release"
+    OR "${CMAKE_BUILD_TYPE}" STREQUAL "RelWithDebInfo"
+  )
+    list(APPEND MANIFOLD_FLAGS -O3)
+  endif()
 endif()
 
 if(CODE_COVERAGE AND NOT MSVC)
@@ -218,24 +227,6 @@ function(logmissingdep PKG)
   endif()
 endfunction()
 
-# GLM is required in all configurations.
-find_package(glm QUIET)
-if(NOT glm_FOUND)
-  logmissingdep("glm")
-  message(STATUS "glm not found, downloading from source")
-  set(GLM_BUILD_INSTALL "ON" CACHE STRING "")
-  FetchContent_Declare(
-    glm
-    GIT_REPOSITORY https://github.com/g-truc/glm.git
-    GIT_TAG 1.0.1
-    GIT_PROGRESS TRUE
-  )
-  FetchContent_MakeAvailable(glm)
-  if(NOT EMSCRIPTEN)
-    install(TARGETS glm)
-  endif()
-endif()
-
 # If we're building parallel, we need the requisite libraries
 if(MANIFOLD_PAR)
   find_package(Threads REQUIRED)
@@ -246,8 +237,6 @@ if(MANIFOLD_PAR)
   endif()
   if(NOT TBB_FOUND)
     logmissingdep("TBB" , "Parallel mode")
-    # TODO - this isn't recommended by the TBB upstream - should we be
-    # doing it?
     message(STATUS "TBB not found, downloading from source")
     set(TBB_TEST OFF CACHE INTERNAL "" FORCE)
     set(TBB_STRICT OFF CACHE INTERNAL "" FORCE)
@@ -362,6 +351,7 @@ endif()
 message(STATUS "BUILD_SHARED_LIBS:           ${BUILD_SHARED_LIBS}")
 message(STATUS " ")
 message(STATUS "MANIFOLD_PAR:                ${MANIFOLD_PAR}")
+message(STATUS "MANIFOLD_CROSS_SECTION:      ${MANIFOLD_CROSS_SECTION}")
 message(STATUS "MANIFOLD_FLAGS:              ${MANIFOLD_FLAGS}")
 message(STATUS "MANIFOLD_EXPORT:             ${MANIFOLD_EXPORT}")
 message(STATUS "MANIFOLD_TEST:               ${MANIFOLD_TEST}")
@@ -412,6 +402,7 @@ set(
   MANIFOLD_PUBLIC_HDRS
   include/manifold/common.h
   include/manifold/iters.h
+  include/manifold/linalg.h
   include/manifold/manifold.h
   include/manifold/optional_assert.h
   include/manifold/parallel.h

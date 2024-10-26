@@ -143,25 +143,25 @@ bool MergeMeshGLP(MeshGLP<Precision, I>& mesh) {
     bBox.min[i] = minMax.first;
     bBox.max[i] = minMax.second;
   }
-  mesh.precision = MaxPrecision(mesh.precision, bBox);
-  if (mesh.precision < 0) return false;
+  auto epsilon = MaxEpsilon(0, bBox);
   auto policy = autoPolicy(numOpenVert, 1e5);
   Vec<Box> vertBox(numOpenVert);
   Vec<uint32_t> vertMorton(numOpenVert);
 
-  for_each_n(policy, countAt(0), numOpenVert,
-             [&vertMorton, &vertBox, &openVerts, &bBox, &mesh](const int i) {
-               int vert = openVerts[i];
+  for_each_n(
+      policy, countAt(0), numOpenVert,
+      [&vertMorton, &vertBox, &openVerts, &bBox, &mesh, epsilon](const int i) {
+        int vert = openVerts[i];
 
-               const vec3 center(mesh.vertProperties[mesh.numProp * vert],
-                                 mesh.vertProperties[mesh.numProp * vert + 1],
-                                 mesh.vertProperties[mesh.numProp * vert + 2]);
+        const vec3 center(mesh.vertProperties[mesh.numProp * vert],
+                          mesh.vertProperties[mesh.numProp * vert + 1],
+                          mesh.vertProperties[mesh.numProp * vert + 2]);
 
-               vertBox[i].min = center - mesh.precision / 2.0;
-               vertBox[i].max = center + mesh.precision / 2.0;
+        vertBox[i].min = center - epsilon / 2.0;
+        vertBox[i].max = center + epsilon / 2.0;
 
-               vertMorton[i] = MortonCode(center, bBox);
-             });
+        vertMorton[i] = MortonCode(center, bBox);
+      });
 
   Vec<int> vertNew2Old(numOpenVert);
   sequence(vertNew2Old.begin(), vertNew2Old.end());
@@ -212,7 +212,7 @@ void Manifold::Impl::Finish() {
   if (halfedge_.size() == 0) return;
 
   CalculateBBox();
-  SetPrecision(precision_);
+  SetEpsilon(epsilon_);
   if (!bBox_.IsFinite()) {
     // Decimated out of existence - early out.
     MarkFailure(Error::NoError);
@@ -265,13 +265,6 @@ void Manifold::Impl::Finish() {
                logicErr,
                "faceNormal size = " + std::to_string(faceNormal_.size()) +
                    ", NumTri = " + std::to_string(NumTri()));
-  // TODO: figure out why this has a flaky failure and then enable reading
-  // vertNormals from a Mesh.
-  // DEBUG_ASSERT(vertNormal_.size() == NumVert() || vertNormal_.size() == 0,
-  // logicErr,
-  //        "vertNormal size = " + std::to_string(vertNormal_.size()) +
-  //            ", NumVert = " + std::to_string(NumVert()));
-
   CalculateNormals();
   collider_ = Collider(faceBox, faceMorton);
 
@@ -496,8 +489,8 @@ void Manifold::Impl::GatherFaces(const Impl& old, const Vec<int>& faceNew2Old) {
  * Updates the mergeFromVert and mergeToVert vectors in order to create a
  * manifold solid. If the MeshGL is already manifold, no change will occur and
  * the function will return false. Otherwise, this will merge verts along open
- * edges within precision (the maximum of the MeshGL precision and the baseline
- * bounding-box precision), keeping any from the existing merge vectors.
+ * edges within tolerance (the maximum of the MeshGL tolerance and the baseline
+ * bounding-box tolerance), keeping any from the existing merge vectors.
  *
  * There is no guarantee the result will be manifold - this is a best-effort
  * helper function designed primarily to aid in the case where a manifold
@@ -514,8 +507,8 @@ bool MeshGL::Merge() {
  * Updates the mergeFromVert and mergeToVert vectors in order to create a
  * manifold solid. If the MeshGL is already manifold, no change will occur and
  * the function will return false. Otherwise, this will merge verts along open
- * edges within precision (the maximum of the MeshGL precision and the baseline
- * bounding-box precision), keeping any from the existing merge vectors.
+ * edges within tolerance (the maximum of the MeshGL tolerance and the baseline
+ * bounding-box tolerance), keeping any from the existing merge vectors.
  *
  * There is no guarantee the result will be manifold - this is a best-effort
  * helper function designed primarily to aid in the case where a manifold

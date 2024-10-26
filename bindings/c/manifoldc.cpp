@@ -27,7 +27,7 @@ using namespace manifold;
 namespace {
 ManifoldManifold *level_set(
     void *mem, double (*sdf_context)(double, double, double, void *),
-    ManifoldBox *bounds, double edge_length, double level, double precision,
+    ManifoldBox *bounds, double edge_length, double level, double tolerance,
     bool seq, void *ctx) {
   // Bind function with context argument to one without
   using namespace std::placeholders;
@@ -37,7 +37,7 @@ ManifoldManifold *level_set(
     return (sdf(v.x, v.y, v.z));
   };
   return to_c(new (mem) Manifold(Manifold::LevelSet(
-      fun, *from_c(bounds), edge_length, level, precision, !seq)));
+      fun, *from_c(bounds), edge_length, level, tolerance, !seq)));
 }
 }  // namespace
 
@@ -237,7 +237,7 @@ ManifoldManifold *manifold_transform(void *mem, ManifoldManifold *m, double x1,
                                      double y1, double z1, double x2, double y2,
                                      double z2, double x3, double y3, double z3,
                                      double x4, double y4, double z4) {
-  auto mat = mat4x3(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4);
+  auto mat = mat3x4({x1, y1, z1}, {x2, y2, z2}, {x3, y3, z3}, {x4, y4, z4});
   auto transformed = from_c(m)->Transform(mat);
   return to_c(new (mem) Manifold(transformed));
 }
@@ -265,16 +265,16 @@ ManifoldManifold *manifold_warp(void *mem, ManifoldManifold *m,
 
 ManifoldManifold *manifold_level_set(
     void *mem, double (*sdf)(double, double, double, void *),
-    ManifoldBox *bounds, double edge_length, double level, double precision,
+    ManifoldBox *bounds, double edge_length, double level, double tolerance,
     void *ctx) {
-  return level_set(mem, sdf, bounds, edge_length, level, precision, false, ctx);
+  return level_set(mem, sdf, bounds, edge_length, level, tolerance, false, ctx);
 }
 
 ManifoldManifold *manifold_level_set_seq(
     void *mem, double (*sdf)(double, double, double, void *),
-    ManifoldBox *bounds, double edge_length, double level, double precision,
+    ManifoldBox *bounds, double edge_length, double level, double tolerance,
     void *ctx) {
-  return level_set(mem, sdf, bounds, edge_length, level, precision, true, ctx);
+  return level_set(mem, sdf, bounds, edge_length, level, tolerance, true, ctx);
 }
 
 ManifoldManifold *manifold_smooth_by_normals(void *mem, ManifoldManifold *m,
@@ -301,9 +301,9 @@ ManifoldManifold *manifold_refine_to_length(void *mem, ManifoldManifold *m,
   return to_c(new (mem) Manifold(refined));
 }
 
-ManifoldManifold *manifold_refine_to_precision(void *mem, ManifoldManifold *m,
-                                               double precision) {
-  auto refined = from_c(m)->RefineToPrecision(precision);
+ManifoldManifold *manifold_refine_to_tolerance(void *mem, ManifoldManifold *m,
+                                               double tolerance) {
+  auto refined = from_c(m)->RefineToTolerance(tolerance);
   return to_c(new (mem) Manifold(refined));
 }
 
@@ -524,9 +524,7 @@ ManifoldBox *manifold_bounding_box(void *mem, ManifoldManifold *m) {
   return to_c(new (mem) Box(box));
 }
 
-double manifold_precision(ManifoldManifold *m) {
-  return from_c(m)->Precision();
-}
+double manifold_epsilon(ManifoldManifold *m) { return from_c(m)->GetEpsilon(); }
 
 uint32_t manifold_reserve_ids(uint32_t n) { return Manifold::ReserveIDs(n); }
 

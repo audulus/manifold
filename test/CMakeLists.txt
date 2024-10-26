@@ -18,8 +18,8 @@ endif()
 
 enable_testing()
 
-find_package(gtest QUIET)
-if(NOT gtest_FOUND)
+find_package(GTest QUIET)
+if(NOT GTest_FOUND)
   if(NOT MANIFOLD_DOWNLOADS)
     message(
       WARNING
@@ -45,18 +45,19 @@ if(NOT gtest_FOUND)
   FetchContent_MakeAvailable(googletest)
 endif()
 
+# put fast/simple tests files first to run earlier
 set(
   SOURCE_FILES
-  boolean_complex_test.cpp
-  boolean_test.cpp
-  hull_test.cpp
-  manifold_test.cpp
+  test_main.cpp
   polygon_test.cpp
   properties_test.cpp
-  samples_test.cpp
+  manifold_test.cpp
+  boolean_test.cpp
   sdf_test.cpp
   smooth_test.cpp
-  test_main.cpp
+  hull_test.cpp
+  samples_test.cpp
+  boolean_complex_test.cpp
 )
 
 if(MANIFOLD_CROSS_SECTION)

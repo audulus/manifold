@@ -17,7 +17,6 @@
 #ifdef MANIFOLD_CROSS_SECTION
 #include "manifold/cross_section.h"
 #endif
-#include "../src/utils.h"
 #include "manifold/polygon.h"
 #include "test.h"
 
@@ -114,7 +113,7 @@ TEST(Samples, Scallop) {
     const vec3 red(1, 0, 0);
     const vec3 blue(0, 0, 1);
     const double limit = 15;
-    vec3 color = glm::mix(blue, red, glm::smoothstep(-limit, limit, curvature));
+    vec3 color = la::lerp(blue, red, smoothstep(-limit, limit, curvature));
     for (const int i : {0, 1, 2}) {
       newProp[i] = color[i];
     }
@@ -147,7 +146,8 @@ TEST(Samples, TetPuzzle) {
 
   Manifold puzzle2 = puzzle.Rotate(0, 0, 180);
   EXPECT_TRUE((puzzle ^ puzzle2).IsEmpty());
-  puzzle = puzzle.Transform(RotateUp({1, -1, -1}));
+  quat q = rotation_quat(normalize(vec3(1, -1, -1)), vec3(0, 0, 1));
+  puzzle = puzzle.Transform({la::qmat(q), vec3()});
 #ifdef MANIFOLD_EXPORT
   if (options.exportModels) ExportMesh("tetPuzzle.glb", puzzle.GetMeshGL(), {});
 #endif
@@ -221,9 +221,9 @@ TEST(Samples, GyroidModule) {
   CheckGL(gyroid);
 
   const Box bounds = gyroid.BoundingBox();
-  const double precision = gyroid.Precision();
-  EXPECT_NEAR(bounds.min.z, 0, precision);
-  EXPECT_NEAR(bounds.max.z, size * std::sqrt(2.0), precision);
+  const double epsilon = gyroid.GetEpsilon();
+  EXPECT_NEAR(bounds.min.z, 0, epsilon);
+  EXPECT_NEAR(bounds.max.z, size * std::sqrt(2.0), epsilon);
 
   CrossSection slice(gyroid.Slice(5));
   EXPECT_EQ(slice.NumContour(), 4);
@@ -267,7 +267,7 @@ TEST(Samples, Sponge4) {
   EXPECT_EQ(cutSponge.second.Genus(), 13394);
 
   CrossSection projection(cutSponge.first.Project());
-  projection = projection.Simplify(cutSponge.first.Precision());
+  projection = projection.Simplify(cutSponge.first.GetEpsilon());
   Rect rect = projection.Bounds();
   Box box = cutSponge.first.BoundingBox();
   EXPECT_EQ(rect.min.x, box.min.x);
@@ -303,13 +303,9 @@ TEST(Samples, Sponge4) {
 TEST(Samples, CondensedMatter16) {
   Manifold cm = CondensedMatter(16);
   CheckGL(cm);
-  // FIXME: normals should be correct
-  // CheckNormals(cm);
 }
 
 TEST(Samples, CondensedMatter64) {
   Manifold cm = CondensedMatter(64);
   CheckGL(cm);
-  // FIXME: normals should be correct
-  // CheckNormals(cm);
 }
